@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Last Man Standing Organiser</title>
+<style>
+:root{--bg:#f4f6f3;--card:#fff;--text:#16211a;--muted:#667267;--accent:#1f8a4c;--accent-t:#fff;--danger:#c0392b;--border:#dde3dc;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111813;--card:#1a241d;--text:#e8efe9;--muted:#93a095;--accent:#34b36b;--accent-t:#06150c;--danger:#e8604f;--border:#2c3a30}}
+:root[data-theme="dark"]{--bg:#111813;--card:#1a241d;--text:#e8efe9;--muted:#93a095;--accent:#34b36b;--accent-t:#06150c;--danger:#e8604f;--border:#2c3a30}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:760px;margin:0 auto;padding:16px}
+h1{font-size:1.5rem;margin:0 0 4px}
+h2{font-size:1.05rem;margin:24px 0 8px}
+.sub{color:var(--muted);margin:0 0 16px}
+.stats{display:flex;gap:8px;margin-bottom:16px}
+.stat{flex:1;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center}
+.stat b{display:block;font-size:1.5rem}
+.stat span{color:var(--muted);font-size:.8rem}
+.row{display:flex;gap:8px}
+input[type=text]{flex:1;min-width:0;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-size:1rem}
+button{padding:10px 14px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-size:.95rem;cursor:pointer}
+button.primary{background:var(--accent);color:var(--accent-t);border-color:var(--accent);font-weight:600}
+button.win.on{background:var(--accent);color:var(--accent-t);border-color:var(--accent)}
+button.out.on{background:var(--danger);color:#fff;border-color:var(--danger)}
+button.link{border:0;background:none;color:var(--muted);padding:4px 8px;font-size:.85rem}
+.player{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px}
+.player .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.player .name{font-weight:600}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.chip{font-size:.75rem;background:var(--bg);border:1px solid var(--border);border-radius:99px;padding:2px 8px;color:var(--muted)}
+.elim{opacity:.75}
+.banner{background:var(--accent);color:var(--accent-t);padding:14px;border-radius:10px;text-align:center;font-weight:600;margin-bottom:16px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+.empty{color:var(--muted);text-align:center;padding:16px}
+</style>
+</head>
+<body>
+<main>
+  <h1>⚽ Last Man Standing</h1>
+  <p class="sub">Pick a team, win to survive, and you can't pick the same team twice.</p>
+  <div id="app"></div>
+</main>
+<script>
+const KEY="lms-v1";
+let S={week:1,players:[]};
+try{const r=localStorage.getItem(KEY);if(r)S=JSON.parse(r)}catch(e){}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const alive=()=>S.players.filter(p=>p.outWeek==null);
+const norm=t=>t.trim().toLowerCase();
+
+function render(){
+  const a=alive(), o=S.players.filter(p=>p.outWeek!=null);
+  let h=`<div class="stats"><div class="stat"><b>${S.week}</b><span>Gameweek</span></div><div class="stat"><b>${a.length}</b><span>Still in</span></div><div class="stat"><b>${o.length}</b><span>Out</span></div></div>`;
+  if(S.players.length>0&&a.length===1&&S.week>1)h+=`<div class="banner">🏆 Winner: ${esc(a[0].name)}</div>`;
+  else if(S.players.length>0&&a.length===0)h+=`<div class="banner">Everyone's out! Reset to start a new round.</div>`;
+  h+=`<div class="row"><input type="text" id="newName" placeholder="Add player name" maxlength="40"><button class="primary" data-a="add">Add</button></div>`;
+  h+=`<h2>Gameweek ${S.week} – players still in</h2>`;
+  if(!a.length)h+=`<div class="empty">No players yet. Add some above.</div>`;
+  a.forEach(p=>{
+    const pk=p.picks[S.week]||{};
+    const prev=Object.keys(p.picks).filter(w=>+w<S.week).map(w=>`<span class="chip">GW${w}: ${esc(p.picks[w].team||"–")}</span>`).join("");
+    h+=`<div class="player"><div class="top"><span class="name">${esc(p.name)}</span><button class="link" data-a="del" data-id="${p.id}">Remove</button></div>
+    <div class="row"><input type="text" placeholder="Team picked" value="${esc(pk.team||"")}" data-a="pick" data-id="${p.id}">
+    <button class="win ${pk.result==="win"?"on":""}" data-a="res" data-r="win" data-id="${p.id}">Win</button>
+    <button class="out ${pk.result==="out"?"on":""}" data-a="res" data-r="out" data-id="${p.id}">Out</button></div>
+    ${prev?`<div class="chips">${prev}</div>`:""}</div>`;
+  });
+  if(a.length)h+=`<div class="actions"><button class="primary" data-a="close">Close gameweek ${S.week} →</button></div>`;
+  if(o.length){
+    h+=`<h2>Eliminated</h2>`;
+    o.sort((x,y)=>y.outWeek-x.outWeek).forEach(p=>{
+      const ch=Object.keys(p.picks).map(w=>`<span class="chip">GW${w}: ${esc(p.picks[w].team||"–")}</span>`).join("");
+      h+=`<div class="player elim"><div class="top"><span class="name">${esc(p.name)} <span class="chip">out GW${p.outWeek}</span></span><button class="link" data-a="revive" data-id="${p.id}">Reinstate</button></div><div class="chips">${ch}</div></div>`;
+    });
+  }
+  h+=`<div class="actions"><button data-a="reset">Reset competition</button></div>`;
+  const focus=document.activeElement&&document.activeElement.id;
+  document.getElementById("app").innerHTML=h;
+  if(focus==="newName")document.getElementById("newName").focus();
+}
+
+const get=id=>S.players.find(p=>p.id==id);
+document.addEventListener("click",e=>{
+  const b=e.target.closest("button[data-a]");if(!b)return;
+  const a=b.dataset.a,p=get(b.dataset.id);
+  if(a==="add")addPlayer();
+  else if(a==="del"&&confirm(`Remove ${p.name}?`)){S.players=S.players.filter(x=>x!==p)}
+  else if(a==="res"){const k=p.picks[S.week]=p.picks[S.week]||{};k.result=k.result===b.dataset.r?null:b.dataset.r}
+  else if(a==="revive"){p.outWeek=null}
+  else if(a==="close")closeWeek();
+  else if(a==="reset"){if(confirm("Clear all players and start over?"))S={week:1,players:[]}}
+  save();render();
+});
+document.addEventListener("change",e=>{
+  const i=e.target;if(i.dataset.a!=="pick")return;
+  const p=get(i.dataset.id),t=i.value.trim();
+  const dup=Object.keys(p.picks).find(w=>+w!==S.week&&norm(p.picks[w].team||"")===norm(t)&&t);
+  if(dup){alert(`${p.name} already used ${t} in gameweek ${dup}.`);i.value="";return}
+  const k=p.picks[S.week]=p.picks[S.week]||{};k.team=t;save();render();
+});
+document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.id==="newName"){addPlayer();save();render()}});
+
+function addPlayer(){
+  const el=document.getElementById("newName"),n=el.value.trim();
+  if(!n)return;
+  S.players.push({id:Date.now()+Math.random().toString(36).slice(2,5),name:n,outWeek:null,picks:{}});
+}
+function closeWeek(){
+  const a=alive(),pending=a.filter(p=>!(p.picks[S.week]&&p.picks[S.week].result));
+  if(pending.length&&!confirm(`${pending.length} player(s) have no result and will be eliminated. Continue?`))return;
+  a.forEach(p=>{const k=p.picks[S.week];if(!k||k.result!=="win")p.outWeek=S.week});
+  S.week++;
+}
+render();
+</script>
+</body>
+</html>
