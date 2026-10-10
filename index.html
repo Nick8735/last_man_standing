@@ -35,7 +35,7 @@ button.link{border:0;background:none;color:var(--muted);padding:4px 8px;font-siz
 .elim{opacity:.75}
 .banner{background:var(--accent);color:var(--accent-t);padding:14px;border-radius:10px;text-align:center;font-weight:600;margin-bottom:16px}
 .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
-.empty{color:var(--muted);text-align:center;padding:16px}
+.badge{font-size:.8rem;border-radius:99px;padding:2px 10px;background:var(--bg);border:1px solid var(--border)}.badge.win{background:var(--accent);color:var(--accent-t)}.badge.out{background:var(--danger);color:#fff}.bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.empty{color:var(--muted);text-align:center;padding:16px}
 </style>
 </head>
 <body>
@@ -45,68 +45,99 @@ button.link{border:0;background:none;color:var(--muted);padding:4px 8px;font-siz
   <div id="app"></div>
 </main>
 <script>
+// 1) Paste your Firebase Realtime Database URL between the quotes (no trailing slash).
+//    Leave empty to run in single-browser mode.
+const DB="https://last-man-standing-7a8b8-default-rtdb.europe-west1.firebasedatabase.app";
+
 const KEY="lms-v1";
 let S={week:1,players:[]};
-try{const r=localStorage.getItem(KEY);if(r)S=JSON.parse(r)}catch(e){}
-const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
+let pw="";try{pw=localStorage.getItem("lms-pw")||""}catch(e){}
+let admin=DB?!!pw:true;
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const alive=()=>S.players.filter(p=>p.outWeek==null);
 const norm=t=>t.trim().toLowerCase();
+const tidy=()=>{S.players=S.players||[];S.players.forEach(p=>p.picks=p.picks||{})};
+
+async function load(){
+  try{
+    if(!DB){const r=localStorage.getItem(KEY);if(r)S=JSON.parse(r)}
+    else{const r=await fetch(DB+"/lms/public.json");const d=await r.json();if(d)S=d}
+  }catch(e){}
+  tidy();
+}
+async function save(){
+  if(!DB){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}return true}
+  try{
+    const r=await fetch(DB+"/lms.json",{method:"PUT",body:JSON.stringify({key:pw,public:S})});
+    if(!r.ok)throw 0;return true;
+  }catch(e){alert("Couldn't save. Check your password and database URL.");return false}
+}
 
 function render(){
-  const a=alive(), o=S.players.filter(p=>p.outWeek!=null);
-  let h=`<div class="stats"><div class="stat"><b>${S.week}</b><span>Gameweek</span></div><div class="stat"><b>${a.length}</b><span>Still in</span></div><div class="stat"><b>${o.length}</b><span>Out</span></div></div>`;
-  if(S.players.length>0&&a.length===1&&S.week>1)h+=`<div class="banner">🏆 Winner: ${esc(a[0].name)}</div>`;
-  else if(S.players.length>0&&a.length===0)h+=`<div class="banner">Everyone's out! Reset to start a new round.</div>`;
-  h+=`<div class="row"><input type="text" id="newName" placeholder="Add player name" maxlength="40"><button class="primary" data-a="add">Add</button></div>`;
+  const a=alive(),o=S.players.filter(p=>p.outWeek!=null);
+  let h="";
+  if(DB)h+=`<div class="bar"><span class="sub" style="margin:0">${admin?"Organiser mode":"Read-only view"}</span><button class="link" data-a="${admin?"logout":"login"}">${admin?"Log out":"Organiser login"}</button></div>`;
+  h+=`<div class="stats"><div class="stat"><b>${S.week}</b><span>Gameweek</span></div><div class="stat"><b>${a.length}</b><span>Still in</span></div><div class="stat"><b>${o.length}</b><span>Out</span></div></div>`;
+  if(S.players.length&&a.length===1&&S.week>1)h+=`<div class="banner">🏆 Winner: ${esc(a[0].name)}</div>`;
+  else if(S.players.length&&a.length===0)h+=`<div class="banner">Everyone's out!</div>`;
+  if(admin)h+=`<div class="row"><input type="text" id="newName" placeholder="Add player name" maxlength="40"><button class="primary" data-a="add">Add</button></div>`;
   h+=`<h2>Gameweek ${S.week} – players still in</h2>`;
-  if(!a.length)h+=`<div class="empty">No players yet. Add some above.</div>`;
+  if(!a.length)h+=`<div class="empty">No players yet.</div>`;
   a.forEach(p=>{
     const pk=p.picks[S.week]||{};
     const prev=Object.keys(p.picks).filter(w=>+w<S.week).map(w=>`<span class="chip">GW${w}: ${esc(p.picks[w].team||"–")}</span>`).join("");
-    h+=`<div class="player"><div class="top"><span class="name">${esc(p.name)}</span><button class="link" data-a="del" data-id="${p.id}">Remove</button></div>
-    <div class="row"><input type="text" placeholder="Team picked" value="${esc(pk.team||"")}" data-a="pick" data-id="${p.id}">
+    h+=`<div class="player"><div class="top"><span class="name">${esc(p.name)}</span>${admin?`<button class="link" data-a="del" data-id="${p.id}">Remove</button>`:""}</div>`;
+    if(admin)h+=`<div class="row"><input type="text" placeholder="Team picked" value="${esc(pk.team||"")}" data-a="pick" data-id="${p.id}">
     <button class="win ${pk.result==="win"?"on":""}" data-a="res" data-r="win" data-id="${p.id}">Win</button>
-    <button class="out ${pk.result==="out"?"on":""}" data-a="res" data-r="out" data-id="${p.id}">Out</button></div>
-    ${prev?`<div class="chips">${prev}</div>`:""}</div>`;
+    <button class="out ${pk.result==="out"?"on":""}" data-a="res" data-r="out" data-id="${p.id}">Out</button></div>`;
+    else h+=`<div class="row" style="align-items:center"><span>${esc(pk.team||"No pick yet")}</span>${pk.result?`<span class="badge ${pk.result}">${pk.result==="win"?"Win":"Out"}</span>`:""}</div>`;
+    h+=prev?`<div class="chips">${prev}</div></div>`:`</div>`;
   });
-  if(a.length)h+=`<div class="actions"><button class="primary" data-a="close">Close gameweek ${S.week} →</button></div>`;
+  if(admin&&a.length)h+=`<div class="actions"><button class="primary" data-a="close">Close gameweek ${S.week} →</button></div>`;
   if(o.length){
     h+=`<h2>Eliminated</h2>`;
     o.sort((x,y)=>y.outWeek-x.outWeek).forEach(p=>{
       const ch=Object.keys(p.picks).map(w=>`<span class="chip">GW${w}: ${esc(p.picks[w].team||"–")}</span>`).join("");
-      h+=`<div class="player elim"><div class="top"><span class="name">${esc(p.name)} <span class="chip">out GW${p.outWeek}</span></span><button class="link" data-a="revive" data-id="${p.id}">Reinstate</button></div><div class="chips">${ch}</div></div>`;
+      h+=`<div class="player elim"><div class="top"><span class="name">${esc(p.name)} <span class="chip">out GW${p.outWeek}</span></span>${admin?`<button class="link" data-a="revive" data-id="${p.id}">Reinstate</button>`:""}</div><div class="chips">${ch}</div></div>`;
     });
   }
-  h+=`<div class="actions"><button data-a="reset">Reset competition</button></div>`;
-  const focus=document.activeElement&&document.activeElement.id;
+  if(admin)h+=`<div class="actions"><button data-a="reset">Reset competition</button></div>`;
+  const f=document.activeElement&&document.activeElement.id;
   document.getElementById("app").innerHTML=h;
-  if(focus==="newName")document.getElementById("newName").focus();
+  if(f==="newName")document.getElementById("newName").focus();
 }
 
 const get=id=>S.players.find(p=>p.id==id);
-document.addEventListener("click",e=>{
+document.addEventListener("click",async e=>{
   const b=e.target.closest("button[data-a]");if(!b)return;
   const a=b.dataset.a,p=get(b.dataset.id);
+  if(a==="login"){
+    const x=prompt("Organiser password");if(!x)return;
+    await load();pw=x;
+    if(await save()){admin=true;try{localStorage.setItem("lms-pw",pw)}catch(e){}}else pw="";
+    render();return;
+  }
+  if(a==="logout"){admin=false;pw="";try{localStorage.removeItem("lms-pw")}catch(e){}render();return}
+  if(!admin)return;
   if(a==="add")addPlayer();
   else if(a==="del"&&confirm(`Remove ${p.name}?`)){S.players=S.players.filter(x=>x!==p)}
   else if(a==="res"){const k=p.picks[S.week]=p.picks[S.week]||{};k.result=k.result===b.dataset.r?null:b.dataset.r}
   else if(a==="revive"){p.outWeek=null}
   else if(a==="close")closeWeek();
   else if(a==="reset"){if(confirm("Clear all players and start over?"))S={week:1,players:[]}}
-  save();render();
+  render();save();
 });
 document.addEventListener("change",e=>{
-  const i=e.target;if(i.dataset.a!=="pick")return;
+  const i=e.target;if(i.dataset.a!=="pick"||!admin)return;
   const p=get(i.dataset.id),t=i.value.trim();
-  const dup=Object.keys(p.picks).find(w=>+w!==S.week&&norm(p.picks[w].team||"")===norm(t)&&t);
+  const dup=t&&Object.keys(p.picks).find(w=>+w!==S.week&&norm(p.picks[w].team||"")===norm(t));
   if(dup){alert(`${p.name} already used ${t} in gameweek ${dup}.`);i.value="";return}
-  const k=p.picks[S.week]=p.picks[S.week]||{};k.team=t;save();render();
+  const k=p.picks[S.week]=p.picks[S.week]||{};k.team=t;render();save();
 });
-document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.id==="newName"){addPlayer();save();render()}});
+document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.id==="newName"&&admin){addPlayer();render();save()}});
 
 function addPlayer(){
-  const el=document.getElementById("newName"),n=el.value.trim();
+  const n=document.getElementById("newName").value.trim();
   if(!n)return;
   S.players.push({id:Date.now()+Math.random().toString(36).slice(2,5),name:n,outWeek:null,picks:{}});
 }
@@ -116,7 +147,8 @@ function closeWeek(){
   a.forEach(p=>{const k=p.picks[S.week];if(!k||k.result!=="win")p.outWeek=S.week});
   S.week++;
 }
-render();
+load().then(render);
+if(DB)setInterval(async()=>{if(!admin&&!document.hidden){await load();render()}},15000);
 </script>
 </body>
 </html>
