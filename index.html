@@ -51,6 +51,7 @@ const DB="https://last-man-standing-7a8b8-default-rtdb.europe-west1.firebasedata
 
 const KEY="lms-v1";
 let S={week:1,players:[]};
+let loadFailed=false;
 let pw="";try{pw=localStorage.getItem("lms-pw")||""}catch(e){}
 let admin=DB?!!pw:true;
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -61,8 +62,8 @@ const tidy=()=>{S.players=S.players||[];S.players.forEach(p=>p.picks=p.picks||{}
 async function load(){
   try{
     if(!DB){const r=localStorage.getItem(KEY);if(r)S=JSON.parse(r)}
-    else{const r=await fetch(DB+"/lms/public.json");const d=await r.json();if(d)S=d}
-  }catch(e){}
+   else{const r=await fetch(DB+"/lms/public.json");const d=await r.json();if(d&&!d.error)S=d;else if(d&&d.error)loadFailed=true}
+  }catch(e){loadFailed=true}
   tidy();
 }
 async function save(){
@@ -75,7 +76,7 @@ async function save(){
 
 function render(){
   const a=alive(),o=S.players.filter(p=>p.outWeek!=null);
-  let h="";
+  let h=""; if(loadFailed)h+='<p class="sub">⚠️ Couldn\'t load the latest data. Refresh to try again.</p>';
   if(DB)h+=`<div class="bar"><span class="sub" style="margin:0">${admin?"Organiser mode":"Read-only view"}</span><button class="link" data-a="${admin?"logout":"login"}">${admin?"Log out":"Organiser login"}</button></div>`;
   h+=`<div class="stats"><div class="stat"><b>${S.week}</b><span>Gameweek</span></div><div class="stat"><b>${a.length}</b><span>Still in</span></div><div class="stat"><b>${o.length}</b><span>Out</span></div></div>`;
   if(S.players.length&&a.length===1&&S.week>1)h+=`<div class="banner">🏆 Winner: ${esc(a[0].name)}</div>`;
@@ -147,6 +148,7 @@ function closeWeek(){
   a.forEach(p=>{const k=p.picks[S.week];if(!k||k.result!=="win")p.outWeek=S.week});
   S.week++;
 }
+render();
 load().then(render);
 if(DB)setInterval(async()=>{if(!admin&&!document.hidden){await load();render()}},15000);
 </script>
